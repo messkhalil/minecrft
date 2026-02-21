@@ -87,7 +87,7 @@ bot.on('chat', (username, message) => {
   if(chatMessages.length > 100) chatMessages.shift()
 
   // تحقق إذا الأدمن كتب /accept
-  if (message.toLowerCase() === '/accept') {
+  if (message.toLowerCase() === '+accept') {
     Object.keys(pendingBans).forEach(player => {
       bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
       const banText = `BANNED: ${player} (approved by ${username})`
@@ -184,3 +184,4 @@ bot.on('end', () => {
 })
 
 bot.on('error', err => console.log(err))
+
