@@ -7,8 +7,9 @@ app.use(express.json())
 app.listen(process.env.PORT || 3000)
 
 // ================== صفحة الكونصول ==================
-let chatMessages = [] // تخزين الرسائل + التنبيهات
-let pendingBans = {} // اللاعبين المشتبه بهم والذين ينتظرون قبول الأدمن
+let chatMessages = []
+let pendingBans = {} // اللاعبون المشتبه بهم
+let warningCounts = {} // عدد الإنذارات لكل لاعب
 
 app.get('/', (req, res) => {
   res.send(`
@@ -21,7 +22,7 @@ app.get('/', (req, res) => {
       #chat { width:80%; height:500px; background:black; margin:20px auto; padding:10px; overflow:auto; border:1px solid #0f0;}
       input { width:60%; padding:10px; background:black; color:#0f0; border:1px solid #0f0;}
       button { padding:10px; background:#0f0; border:none; cursor:pointer;}
-      .alert { color: #f00; } /* رسائل التحذير باللون الأحمر */
+      .alert { color: #f00; }
     </style>
   </head>
   <body>
@@ -82,26 +83,23 @@ const bot = mineflayer.createBot({
 
 bot.on('spawn', () => console.log("Bot joined the server!"))
 
-bot.on('chat', (username, message) => {
-  chatMessages.push({ text: `${username}: ${message}`, alert: false })
-  if(chatMessages.length > 100) chatMessages.shift()
-
-  // تحقق إذا الأدمن كتب /accept
-  if (message.toLowerCase() === '+accept') {
-    Object.keys(pendingBans).forEach(player => {
-      bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
-      const banText = `BANNED: ${player} (approved by ${username})`
-      console.log(banText)
-      chatMessages.push({ text: banText, alert: true })
-    })
-    pendingBans = {} // تفريغ قائمة الانتظار بعد البان
-  }
-})
+// ================== نظام إرسال التنبيه للأوبريتورز ==================
+function alertOps(message) {
+  let opsOnline = false
+  Object.values(bot.players).forEach(p => {
+    if(p.entity && p.username !== bot.username && p.op) { // إذا اللاعب OP
+      bot.chat(`/tell ${p.username} [ALERT] ${message}`)
+      opsOnline = true
+    }
+  })
+  return opsOnline
+}
 
 // ================== نظام كشف التعدين المشبوه ==================
 const MAX_WALK_SPEED = 6
 const MIN_NORMAL_TIME = 1.5
 const SUSPICION_THRESHOLD = 3
+const MAX_WARNINGS = 3
 
 let suspicionScores = {}
 let lastMined = {}
@@ -143,6 +141,7 @@ bot.on('blockUpdate', (oldBlock, newBlock) => {
 
     if (!suspicionScores[player]) suspicionScores[player] = 0
     if (!lastMined[player]) lastMined[player] = {}
+    if (!warningCounts[player]) warningCounts[player] = 0
 
     const last = lastMined[player][oldBlock.name]
 
@@ -156,8 +155,23 @@ bot.on('blockUpdate', (oldBlock, newBlock) => {
         console.log(alertText)
         chatMessages.push({ text: alertText, alert: true })
 
-        // أضف اللاعب لقائمة الانتظار بدلاً من البان مباشرة
-        if (suspicionScores[player] >= SUSPICION_THRESHOLD) {
+        const opsOnline = alertOps(alertText)
+
+        // إذا لا يوجد OP أرسل 3 إنذارات مباشرة
+        if (!opsOnline) {
+          warningCounts[player]++
+          for(let i=0;i<MAX_WARNINGS;i++) {
+            bot.chat(`/tell ${player} ⚠ Warning ${i+1}: Suspicious mining detected!`)
+          }
+          if(warningCounts[player] >= MAX_WARNINGS) {
+            bot.chat(`/ban ${player} Abnormal diamond/netherite mining (no OP online)`)
+            const banText = `BANNED: ${player} automatically (no OP online)`
+            console.log(banText)
+            chatMessages.push({ text: banText, alert: true })
+            delete warningCounts[player]
+          }
+        } else {
+          // إذا OP أونلاين أترك البان للأدمن مع /accept
           pendingBans[player] = true
           const pendingText = `⏳ Pending ban: ${player} (waiting for /accept from admin)`
           console.log(pendingText)
@@ -175,6 +189,22 @@ bot.on('blockUpdate', (oldBlock, newBlock) => {
   }
 })
 
+// ================== أمر /accept من الأدمن ==================
+bot.on('chat', (username, message) => {
+  chatMessages.push({ text: `${username}: ${message}`, alert: false })
+  if(chatMessages.length > 100) chatMessages.shift()
+
+  if (message.toLowerCase() === '/accept') {
+    Object.keys(pendingBans).forEach(player => {
+      bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
+      const banText = `BANNED: ${player} (approved by ${username})`
+      console.log(banText)
+      chatMessages.push({ text: banText, alert: true })
+    })
+    pendingBans = {}
+  }
+})
+
 // ================== إعادة الاتصال ==================
 bot.on('end', () => {
   console.log("Bot disconnected, reconnecting...")
@@ -184,4 +214,3 @@ bot.on('end', () => {
 })
 
 bot.on('error', err => console.log(err))
-
