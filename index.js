@@ -8,6 +8,7 @@ app.listen(process.env.PORT || 3000)
 
 // ================== صفحة الكونصول ==================
 let chatMessages = [] // تخزين الرسائل + التنبيهات
+let pendingBans = {} // اللاعبين المشتبه بهم والذين ينتظرون قبول الأدمن
 
 app.get('/', (req, res) => {
   res.send(`
@@ -84,6 +85,17 @@ bot.on('spawn', () => console.log("Bot joined the server!"))
 bot.on('chat', (username, message) => {
   chatMessages.push({ text: `${username}: ${message}`, alert: false })
   if(chatMessages.length > 100) chatMessages.shift()
+
+  // تحقق إذا الأدمن كتب /accept
+  if (message.toLowerCase() === '/accept') {
+    Object.keys(pendingBans).forEach(player => {
+      bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
+      const banText = `BANNED: ${player} (approved by ${username})`
+      console.log(banText)
+      chatMessages.push({ text: banText, alert: true })
+    })
+    pendingBans = {} // تفريغ قائمة الانتظار بعد البان
+  }
 })
 
 // ================== نظام كشف التعدين المشبوه ==================
@@ -143,6 +155,15 @@ bot.on('blockUpdate', (oldBlock, newBlock) => {
         const alertText = `⚠ Suspicious mining detected: ${player} score ${suspicionScores[player]}`
         console.log(alertText)
         chatMessages.push({ text: alertText, alert: true })
+
+        // أضف اللاعب لقائمة الانتظار بدلاً من البان مباشرة
+        if (suspicionScores[player] >= SUSPICION_THRESHOLD) {
+          pendingBans[player] = true
+          const pendingText = `⏳ Pending ban: ${player} (waiting for /accept from admin)`
+          console.log(pendingText)
+          chatMessages.push({ text: pendingText, alert: true })
+        }
+
         if(chatMessages.length > 100) chatMessages.shift()
       }
     }
@@ -150,14 +171,6 @@ bot.on('blockUpdate', (oldBlock, newBlock) => {
     lastMined[player][oldBlock.name] = {
       location: location,
       timestamp: timestamp
-    }
-
-    if (suspicionScores[player] >= SUSPICION_THRESHOLD) {
-      const banText = `BANNED: ${player} for abnormal mining`
-      bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
-      console.log(banText)
-      chatMessages.push({ text: banText, alert: true })
-      if(chatMessages.length > 100) chatMessages.shift()
     }
   }
 })
