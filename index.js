@@ -186,7 +186,7 @@ bot.on('chat', (username, message) => {
   chatMessages.push({ text: `${username}: ${message}`, alert: false })
   if(chatMessages.length > 100) chatMessages.shift()
 
-  if(message.toLowerCase() === '/accept' && opsList.includes(username)) {
+  if(message.toLowerCase() === '+accept' && opsList.includes(username)) {
     Object.keys(pendingBans).forEach(player => {
       bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
       const banText = `BANNED: ${player} (approved by ${username})`
@@ -204,4 +204,5 @@ bot.on('end', () => {
 })
 
 bot.on('error', err => console.log(err))
+
 
