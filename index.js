@@ -12,7 +12,7 @@ let pendingBans = {}      // اللاعبين المشتبه بهم
 let warningCounts = {}     // عدد الإنذارات لكل لاعب
 
 // قائمة الأوبريتورز المصرح لهم بتنفيذ /accept
-const opsList = ["khalilcrb196205", "blaze] // ضع اسمك هنا أو أضف أكثر
+const opsList = ["khalilcrb196205", "blaze"] // ضع اسمك هنا أو أضف أكثر
 
 app.get('/', (req, res) => {
   res.send(`
@@ -204,3 +204,4 @@ bot.on('end', () => {
 })
 
 bot.on('error', err => console.log(err))
+
