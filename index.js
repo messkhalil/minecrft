@@ -4,7 +4,6 @@ const express = require('express')
 const app = express()
 app.use(express.json())
 
-// مهم لـ Render
 app.listen(process.env.PORT || 3000)
 
 // ================== صفحة الكونصول ==================
@@ -44,7 +43,6 @@ app.get('/', (req, res) => {
   `)
 })
 
-// إرسال رسالة من الموقع إلى ماينكرافت
 app.post('/send', (req, res) => {
   const message = req.body.message
   if (message && bot) {
@@ -59,54 +57,82 @@ const bot = mineflayer.createBot({
   username: 'AntiCheatBot'
 })
 
-let playerLogs = {}
-
 bot.on('spawn', () => {
   console.log("Bot joined the server!")
 })
 
-// ================== نظام مراقبة الدايموند ==================
-bot.on('playerCollect', (collector, collected) => {
-  if (!collector || !collector.username) return
+// ================== نظام كشف التعدين المشبوه ==================
 
-  const player = collector.username
-  const itemName = collected?.item?.name
+const MAX_WALK_SPEED = 6
+const MIN_NORMAL_TIME = 1.5
+const SUSPICION_THRESHOLD = 3
 
-  if (!playerLogs[player]) {
-    playerLogs[player] = {
-      diamonds: 0,
-      debris: 0,
-      time: Date.now()
+let suspicionScores = {}
+let lastMined = {}
+
+function distance(pos1, pos2) {
+  return Math.sqrt(
+    Math.pow(pos1.x - pos2.x, 2) +
+    Math.pow(pos1.y - pos2.y, 2) +
+    Math.pow(pos1.z - pos2.z, 2)
+  )
+}
+
+bot.on('blockUpdate', (oldBlock, newBlock) => {
+  if (!oldBlock) return
+
+  const valuableBlocks = [
+    "diamond_ore",
+    "deepslate_diamond_ore",
+    "ancient_debris"
+  ]
+
+  if (valuableBlocks.includes(oldBlock.name) && newBlock.name === "air") {
+
+    const players = Object.values(bot.players)
+      .filter(p => p.entity)
+
+    if (players.length === 0) return
+
+    const nearest = players.sort((a, b) =>
+      a.entity.position.distanceTo(oldBlock.position) -
+      b.entity.position.distanceTo(oldBlock.position)
+    )[0]
+
+    if (!nearest) return
+
+    const player = nearest.username
+    const location = oldBlock.position
+    const timestamp = Date.now() / 1000
+
+    if (!suspicionScores[player]) suspicionScores[player] = 0
+    if (!lastMined[player]) lastMined[player] = {}
+
+    const last = lastMined[player][oldBlock.name]
+
+    if (last) {
+      const timeDiff = timestamp - last.timestamp
+      const dist = distance(last.location, location)
+
+      if ((dist / timeDiff) > MAX_WALK_SPEED || timeDiff < MIN_NORMAL_TIME) {
+        suspicionScores[player]++
+        console.log("Suspicious:", player, suspicionScores[player])
+      }
     }
-  }
 
-  const now = Date.now()
-  const diff = (now - playerLogs[player].time) / 1000
+    lastMined[player][oldBlock.name] = {
+      location: location,
+      timestamp: timestamp
+    }
 
-  // مراقبة Diamond
-  if (itemName === "diamond") {
-    playerLogs[player].diamonds++
-  }
-
-  // مراقبة Ancient Debris
-  if (itemName === "ancient_debris") {
-    playerLogs[player].debris++
-  }
-
-  // بان إذا جمع 10 دايموند خلال 60 ثانية
-  if (playerLogs[player].diamonds >= 10 && diff < 60) {
-    bot.chat(`/ban ${player} Fast diamond farming detected`)
-    console.log("Banned for diamonds:", player)
-  }
-
-  // بان إذا جمع 5 نذرايت خلال 60 ثانية
-  if (playerLogs[player].debris >= 5 && diff < 60) {
-    bot.chat(`/ban ${player} Fast netherite farming detected`)
-    console.log("Banned for netherite:", player)
+    if (suspicionScores[player] >= SUSPICION_THRESHOLD) {
+      bot.chat(`/ban ${player} Abnormal diamond/netherite mining`)
+      console.log("BANNED:", player)
+    }
   }
 })
 
-// إعادة الاتصال إذا فصل
+// إعادة الاتصال
 bot.on('end', () => {
   console.log("Bot disconnected, reconnecting...")
   setTimeout(() => {
