@@ -7,7 +7,7 @@ app.use(express.json())
 // مهم لـ Render
 app.listen(process.env.PORT || 3000)
 
-// صفحة الكونصول
+// ================== صفحة الكونصول ==================
 app.get('/', (req, res) => {
   res.send(`
   <!DOCTYPE html>
@@ -44,7 +44,7 @@ app.get('/', (req, res) => {
   `)
 })
 
-// استقبال الرسالة من الصفحة
+// إرسال رسالة من الموقع إلى ماينكرافت
 app.post('/send', (req, res) => {
   const message = req.body.message
   if (message && bot) {
@@ -53,17 +53,65 @@ app.post('/send', (req, res) => {
   res.sendStatus(200)
 })
 
-// البوت
+// ================== البوت ==================
 const bot = mineflayer.createBot({
   host: '34.75.227.210',
   username: 'AntiCheatBot'
 })
 
+let playerLogs = {}
+
 bot.on('spawn', () => {
   console.log("Bot joined the server!")
 })
 
-bot.on('error', err => console.log(err))
-bot.on('end', () => {
-  console.log("Bot disconnected...")
+// ================== نظام مراقبة الدايموند ==================
+bot.on('playerCollect', (collector, collected) => {
+  if (!collector || !collector.username) return
+
+  const player = collector.username
+  const itemName = collected?.item?.name
+
+  if (!playerLogs[player]) {
+    playerLogs[player] = {
+      diamonds: 0,
+      debris: 0,
+      time: Date.now()
+    }
+  }
+
+  const now = Date.now()
+  const diff = (now - playerLogs[player].time) / 1000
+
+  // مراقبة Diamond
+  if (itemName === "diamond") {
+    playerLogs[player].diamonds++
+  }
+
+  // مراقبة Ancient Debris
+  if (itemName === "ancient_debris") {
+    playerLogs[player].debris++
+  }
+
+  // بان إذا جمع 10 دايموند خلال 60 ثانية
+  if (playerLogs[player].diamonds >= 10 && diff < 60) {
+    bot.chat(`/ban ${player} Fast diamond farming detected`)
+    console.log("Banned for diamonds:", player)
+  }
+
+  // بان إذا جمع 5 نذرايت خلال 60 ثانية
+  if (playerLogs[player].debris >= 5 && diff < 60) {
+    bot.chat(`/ban ${player} Fast netherite farming detected`)
+    console.log("Banned for netherite:", player)
+  }
 })
+
+// إعادة الاتصال إذا فصل
+bot.on('end', () => {
+  console.log("Bot disconnected, reconnecting...")
+  setTimeout(() => {
+    process.exit()
+  }, 5000)
+})
+
+bot.on('error', err => console.log(err))
